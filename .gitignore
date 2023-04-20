@@ -128,6 +128,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# config
+.vscode
+
 #pypi api token
 .pypirc
 
