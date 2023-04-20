@@ -1,0 +1,1 @@
+include src/firstorder/parser/tptp_grammar.lark

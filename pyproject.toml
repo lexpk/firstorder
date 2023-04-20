@@ -1,0 +1,37 @@
+[project]
+name = "firstorder"
+version = "0.0.1"
+authors = [
+  { name="Alexander Pluska", email="alexander.plusla@gmail.com" },
+]
+description = "An interface for leveraging state-of-the-art first-order provers in Python."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  'lark >= 1.0',
+]
+
+[project.urls]
+"Homepage" = "https://github.com/lexpk/firstorder"
+
+[build-system]
+requires = ['setuptools>=42']
+build-backend = 'setuptools.build_meta'
+
+[project.optional-dependencies]
+test = [
+  "pytest>=6.2.5"
+]
+experiments = [
+  "ipykernel>=6.20.2"
+]
+
+[tool.pytest.ini_options]
+markers = [
+  "integration",
+]
