@@ -5,10 +5,12 @@ from ..logic import (
     Equation,
     Function,
     Problem,
+    Proof,
     Sequent,
     Term,
     Variable,
-    substitute
+    substitute,
+    superposition_results
 )
 
 
@@ -21,8 +23,16 @@ def from_tptp_file(
     file: str,
     include_dir: str = ""
 ) -> Problem:
-    axioms, hypotheses, functions = _from_tptp_file(file, include_dir)
-    return _from_axioms_hypotheses_functions(axioms, hypotheses, functions)
+    axioms, conjectures, functions = _from_tptp_file(file, include_dir)
+    return _from_axioms_conjectures_functions(axioms, conjectures, functions)
+
+
+def from_tptp_proof_file(
+    file: str,
+):
+    with open(file, 'r') as f:
+        input = parse_tptp_tree(
+            tptp_parser.parse(f.read()))
 
 
 def _from_tptp_file(
@@ -33,48 +43,103 @@ def _from_tptp_file(
         input = parse_tptp_tree(
             tptp_parser.parse(f.read()))
     axioms = input["axiom"]
-    hypotheses = input["conjecture"]
+    conjectures = input["conjecture"]
     functions = input["functions"]
     for include in input["include"]:
         result = _from_tptp_file(include_dir + include)
         axioms += result[0]
-        hypotheses += result[1]
+        conjectures += result[1]
         functions.update(result[2])
-    return axioms, hypotheses, functions
+    return axioms, conjectures, functions
 
 
 def from_tptp_string(str: str) -> Problem:
     tree = tptp_parser.parse(str)
     input = parse_tptp_tree(tree)
     axioms = input["axiom"]
-    hypotheses = input["conjecture"]
+    conjectures = input["conjecture"]
     functions = input["functions"]
-    return _from_axioms_hypotheses_functions(axioms, hypotheses, functions)
+    return _from_axioms_conjectures_functions(axioms, conjectures, functions)
 
 
-def _from_axioms_hypotheses_functions(axioms, hypotheses, functions) -> Problem:
+def from_tptp_proof_string(str: str):
+    input = parse_tptp_tree(tptp_parser.parse(str))
+    axioms = input["axiom"]
+    conjectures = input["conjecture"]
+    functions = input["functions"]
+    order = input["order"]
+    problem = Problem()
+    proof = Proof(problem, [], [])
+    transformed_conjectures = []
+    transformed_axioms = []
+    for conjecture in conjectures:
+        skolemized_conjecture, _ = skolemize(conjecture, 0)
+        cnf_conjecture = cnf(skolemized_conjecture)[0].normalize()
+        if cnf_conjecture not in proof.derived_sequents:
+            proof.derived_sequents.append(cnf_conjecture)
+        transformed_conjectures.append(cnf_conjecture)
+    for axiom in axioms:
+        skolemized_axiom, _ = skolemize(axiom, 0)
+        cnf_axiom = cnf(skolemized_axiom)[0].normalize()
+        if cnf_axiom not in proof.derived_sequents:
+            problem.axioms.append(cnf_axiom)
+        transformed_axioms.append(cnf_axiom)
+    conjecture_index = 0
+    axiom_index = 0
+    index = 1
+    derivation = []
+    while index < len(order):
+        derived_from = []
+        while index < len(order) and order[index] == "axiom":
+            derived_from.append(axiom_index)
+            axiom_index += 1
+            index += 1
+        derivation.append(derived_from)
+        conjecture_index += 1
+        index += 1
+    i = 0
+    sequents = problem.axioms + proof.derived_sequents
+    for predecessors in derivation:
+        if len(predecessors) == 2:
+            for toplevel, terminstance, result in superposition_results(
+                transformed_axioms[predecessors[0]],
+                transformed_axioms[predecessors[1]]
+            ):
+                if result == proof.derived_sequents[i]:
+                    proof.derivation.append((
+                        sequents.index(toplevel.sequent),
+                        sequents.index(terminstance.sequent),
+                        toplevel,
+                        terminstance
+                    ))
+                    break
+            i += 1
+    return proof
+
+
+def _from_axioms_conjectures_functions(axioms, conjectures, functions) -> Problem:
     skolemized_axioms = []
-    skolemized_hypotheses = []
+    skolemized_conjectures = []
     skolem_counter = 0
     for axiom in axioms:
         skolemized_axiom, skolem_functions = skolemize(axiom, skolem_counter)
         skolemized_axioms.append(skolemized_axiom)
         functions.update(skolem_functions)
         skolem_counter += len(skolem_functions)
-    for hypothesis in hypotheses:
-        skolemized_hypothesis, skolem_functions = skolemize(
-            hypothesis,
+    for conjecture in conjectures:
+        skolemized_conjecture, skolem_functions = skolemize(
+            conjecture,
             skolem_counter
         )
-        skolemized_hypotheses.append(skolemized_hypothesis)
+        skolemized_conjectures.append(skolemized_conjecture)
         functions.update(skolem_functions)
         skolem_counter += len(skolem_functions)
     final_axioms = []
-    final_hypotheses = []
+    final_conjectures = []
     for axiom in skolemized_axioms:
         final_axioms += cnf(axiom)
-    for hypothesis in skolemized_hypotheses:
-        final_hypotheses += cnf(hypothesis)
+    for conjecture in skolemized_conjectures:
+        final_conjectures += cnf(conjecture)
     problem = Problem()
     problem.declare_function("true", 0)
     problem.declare_function("false", 0)
@@ -92,8 +157,8 @@ def _from_axioms_hypotheses_functions(axioms, hypotheses, functions) -> Problem:
             )
     for axiom in final_axioms:
         problem.read_axiom(repr(axiom))
-    for hypothesis in final_hypotheses:
-        problem.read_conjecture(repr(hypothesis))
+    for conjecture in final_conjectures:
+        problem.read_conjecture(repr(conjecture))
     return problem
 
 
@@ -136,6 +201,7 @@ def parse_tptp_tree(input: Tree) -> dict:
         "conjecture": [],
         "functions": set(),
         "variables": {},
+        "order": [],
     }
     _parse_tptp_tree(input, result)
     return result
@@ -165,23 +231,26 @@ input contains {input.children[0].data.value}")
 
 def _parse_fof_annotated(input: Tree, data: dict):
     match input.children[1].value:
-        case "axiom" | "hypothesis" | "definition" | "assumption" | "lemma" | "theorem":
+        case "axiom" | "definition" | "assumption" | "hypothesis" | "lemma" | "theorem":
             data["axiom"].append(
                 _parse_fof_formula(input.children[2], data)
             )
+            data["order"].append("axiom")
         case "conjecture":
             data["conjecture"].append(
                 _parse_fof_formula(input.children[2], data)
             )
+            data["order"].append("conjecture")
         case "negated_conjecture":
             data["conjecture"].append(
                 Function("not", (_parse_fof_formula(input.children[2], data),))
             )
+            data["order"].append("conjecture")
 
 
 def _parse_cnf_annotated(input: Tree, data: dict):
     match input.children[1].value:
-        case "axiom" | "hypothesis" | "definition" | "assumption" | "lemma" | "theorem":
+        case "axiom" | "conjecture" | "definition" | "assumption" | "hypothesis" | "lemma" | "theorem":
             data["axiom"].append(
                 _parse_disjunction(input.children[2].children[0], data)
             )

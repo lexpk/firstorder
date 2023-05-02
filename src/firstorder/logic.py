@@ -517,8 +517,8 @@ class Sequent:
             unifier = mgu(equation.left, equation.right, disjoint=False)
             if unifier is not None:
                 return substitute(
-                    self.remove_equation("l", i),
-                    unifier
+                    unifier,
+                    self.remove_equation("l", i)
                 )
         return self
 
@@ -569,6 +569,8 @@ class Sequent:
             The normalized sequent.
         """
         new_sequent = self.equality_factoring().equality_resolution()
+        new_sequent.right = tuple(equation for equation in new_sequent.right if equation != Equation(
+            Function("false", tuple()), Function("true", tuple())))
         return new_sequent
 
 
@@ -1119,6 +1121,38 @@ def superposition(
     ).normalize()
 
 
+def superposition_results(
+    sequent1: Sequent,
+    sequent2: Sequent
+) -> list[Sequent]:
+    """Produces a list of all sequents which can be obtained by applying superposition to the given sequents.
+
+    Parameters
+    ----------
+    toplevel: Sequent
+        The Sequent from which the toplevel term instance is obtained.
+    other: Sequent
+        The Sequent from which the general term instance is obtained.
+
+    Returns
+    -------
+    list[Sequent]
+        The list of sequents obtained by superposition.
+    """
+    results = []
+    for toplevel_terminstance in positive_toplevel_terminstances(sequent1):
+        for terminstance in terminstances(sequent2):
+            result = superposition(toplevel_terminstance, terminstance)
+            if result is not None:
+                results.append((toplevel_terminstance, terminstance, result))
+    for toplevel_terminstance in positive_toplevel_terminstances(sequent2):
+        for terminstance in terminstances(sequent1):
+            result = superposition(toplevel_terminstance, terminstance)
+            if result is not None:
+                results.append((toplevel_terminstance, terminstance, result))
+    return results
+
+
 class Proof:
     """A proof.
     """
@@ -1134,7 +1168,7 @@ class Proof:
         """
         self.problem = problem
         self.derived_sequents = derived_sequents
-        self.derivation = self.derivation
+        self.derivation = derivation
 
     def __str__(self):
         result = ""
@@ -1154,48 +1188,35 @@ class Proof:
 
     def check(self):
         """Checks if the proof is valid."""
+        index = self.problem.axioms + self.derived_sequents
         for i, sequent in enumerate(self.derived_sequents):
-            if type(self.derivation[i]) == int:
-                if sequent != self.problem.axioms[self.derivation[i]]:
-                    raise InvalidProof(
-                        "Step {}: Derived formula ({}) is not Axiom {} ({}).".format(
-                            i, sequent, self.derivation[i], self.problem.axioms[self.derivation[i]]
-                        )
-                    )
-            if type(self.derivation[i]) == tuple[int, int, TermInstance, TermInstance]:
-                if self.derived_sequents[self.derivation[i][0]] != self.derivation[i][2].sequent:
-                    raise InvalidProof(
-                        "Step {}: Term instance {} ({}) does not match sequent {} ({}).".format(
-                            i, self.derivation[i][0], sequent, self.derivation[i][0], self.derivation[i][2].sequent
-                        )
-                    )
-                if self.derived_sequents[self.derivation[i][1]] != self.derivation[i][3].sequent:
-                    raise InvalidProof(
-                        "Step {}: Term instance {} ({}) does not match sequent {} ({}).".format(
-                            i, self.derivation[i][1], sequent, self.derivation[i][1], self.derivation[i][3].sequent
-                        )
-                    )
-                if i < self.derivation[i][0] or i < self.derivation[i][1]:
-                    raise InvalidProof(
-                        "Step {}: Attempting to use sequent {} that has not been derived yet.".format(
-                            i, max(self.derivation[i][0], self.derivation[i][1]))
-                    )
-                if self.derived_sequents[i] != superposition(self.derivation[i][2], self.derivation[i][3]):
-                    raise InvalidProof(
-                        "Step {}: Derived formula ({}) does not match superposition of {} ({}) and {} ({}).".format(
-                            i,
-                            self.derived_sequents[i],
-                            self.derivation[i][0],
-                            self.derivation[i][2].sequent,
-                            self.derivation[i][1],
-                            self.derivation[i][3].sequent
-                        )
-                    )
-            else:
+            if index[self.derivation[i][0]] != self.derivation[i][2].sequent:
                 raise InvalidProof(
-                    "Type of derivation {} is invalid.\
-                        Must be int or tuple[int, int, TermInstance, TermInstance].".format(
-                        self.derivation[i])
+                    "Step {}: Term instance {} ({}) does not match sequent {} ({}).".format(
+                        i, self.derivation[i][0], sequent, self.derivation[i][0], self.derivation[i][2].sequent
+                    )
+                )
+            if index[self.derivation[i][1]] != self.derivation[i][3].sequent:
+                raise InvalidProof(
+                    "Step {}: Term instance {} ({}) does not match sequent {} ({}).".format(
+                        i, self.derivation[i][1], sequent, self.derivation[i][1], self.derivation[i][3].sequent
+                    )
+                )
+            if len(self.problem.axioms) + i < self.derivation[i][0] or len(self.problem.axioms) + i < self.derivation[i][1]:
+                raise InvalidProof(
+                    "Step {}: Attempting to use sequent {} that has not been derived yet.".format(
+                        i, max(self.derivation[i][0], self.derivation[i][1]))
+                )
+            if self.derived_sequents[i] != superposition(self.derivation[i][2], self.derivation[i][3]):
+                raise InvalidProof(
+                    "Step {}: Derived formula ({}) does not match superposition of {} ({}) and {} ({}).".format(
+                        i,
+                        self.derived_sequents[i],
+                        self.derivation[i][0],
+                        self.derivation[i][2].sequent,
+                        self.derivation[i][1],
+                        self.derivation[i][3].sequent
+                    )
                 )
         for conjecture in self.problem.conjectures:
             if conjecture not in self.derived_sequents:
