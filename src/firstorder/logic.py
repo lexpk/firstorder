@@ -25,6 +25,12 @@ class Function:
         if type(other) == Variable:
             return False
 
+    def _normalize_variables(self, mapping: dict['Variable', 'Variable']):
+        args = []
+        for a in self.args:
+            args.append(a._normalize_variables(mapping))
+        return Function(self.name, tuple(args))
+
 
 @dataclass(eq=True, frozen=True)
 class Variable:
@@ -38,6 +44,11 @@ class Variable:
             return True
         if type(other) == Variable:
             return self.id < other.id
+
+    def _normalize_variables(self, mapping: dict['Variable', 'Variable']):
+        if self not in mapping:
+            mapping[self] = Variable(len(mapping))
+        return mapping[self]
 
 
 Term = Function | Variable
@@ -279,6 +290,23 @@ class Equation:
             )
         else:
             raise ValueError("Invalid side: {}".format(side))
+
+    def _normalize_variables(self, mapping: dict[Variable, Variable]) -> 'Equation':
+        """Normalizes the variables in the equation.
+
+        Parameters
+        ----------
+        mapping : dict[Variable, Variable]
+            The mapping of variables to normalized variables.
+
+        Returns
+        -------
+        Equation
+            The normalized equation.
+        """
+        left = self.left._normalize_variables(mapping)
+        right = self.right._normalize_variables(mapping)
+        return Equation(left, right)
 
 
 class Sequent:
@@ -568,10 +596,33 @@ class Sequent:
         Sequent
             The normalized sequent.
         """
-        new_sequent = self.equality_factoring().equality_resolution()
+        new_sequent = self
         new_sequent.right = tuple(equation for equation in new_sequent.right if equation != Equation(
             Function("false", tuple()), Function("true", tuple())))
-        return new_sequent
+        new_sequent.right = tuple(sorted([equation for equation in set(
+            new_sequent.right) if equation.left != equation.right]))
+        new_sequent.left = tuple(sorted([equation for equation in set(
+            new_sequent.left) if equation.left != equation.right]))
+        return new_sequent.normalize_variables()
+
+    def normalize_variables(self) -> 'Sequent':
+        """Normalizes the variables in the sequent.
+
+        Parameters
+        ----------
+        mapping : dict[Variable, Variable]
+            The mapping from variables to variables.
+
+        Returns
+        -------
+        Sequent
+            The sequent with the variables normalized.
+        """
+        mapping = {}
+        return Sequent(
+            tuple(e._normalize_variables(mapping) for e in self.left),
+            tuple(e._normalize_variables(mapping) for e in self.right)
+        )
 
 
 Substitution = dict[Variable, Term]
@@ -680,6 +731,10 @@ def mgu(
                         return None
                     s1.update(m[0])
                     s2.update(m[1])
+                    for k, v in s1.items():
+                        s1[k] = substitute(s2, v)
+                    for k, v in s2.items():
+                        s2[k] = substitute(s1, v)
                 return (s1, s2)
             else:
                 s = dict()

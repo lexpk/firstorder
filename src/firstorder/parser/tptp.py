@@ -97,23 +97,30 @@ def from_tptp_proof_string(str: str):
         derivation.append(derived_from)
         conjecture_index += 1
         index += 1
-    i = 0
     sequents = problem.axioms + proof.derived_sequents
-    for predecessors in derivation:
-        if len(predecessors) == 2:
+    for sequent in proof.derived_sequents:
+        index = transformed_conjectures.index(sequent)
+        proof.derivation.append(derivation[index])
+    for i, derivation in enumerate(proof.derivation):
+        if len(derivation) == 2:
             for toplevel, terminstance, result in superposition_results(
-                transformed_axioms[predecessors[0]],
-                transformed_axioms[predecessors[1]]
+                transformed_axioms[derivation[0]],
+                transformed_axioms[derivation[1]]
             ):
                 if result == proof.derived_sequents[i]:
-                    proof.derivation.append((
+                    proof.derivation[i] = (
                         sequents.index(toplevel.sequent),
                         sequents.index(terminstance.sequent),
                         toplevel,
                         terminstance
-                    ))
+                    )
                     break
-            i += 1
+            else:
+                proof.derivation[i] = (
+                    proof.derived_sequents[i],
+                    transformed_axioms[derivation[0]],
+                    transformed_axioms[derivation[1]]
+                )
     return proof
 
 
