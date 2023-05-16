@@ -1166,9 +1166,9 @@ def superposition(
     )
     new_terminstance = substitute(
         m1,
-        terminstance.sequent,
-    ).replace_equation(
-        terminstance.sequent_side, terminstance.equation_index, new_equation
+        terminstance.sequent.replace_equation(
+            terminstance.sequent_side, terminstance.equation_index, new_equation
+        ),
     )
     return Sequent(
         new_toplevel.left + new_terminstance.left,

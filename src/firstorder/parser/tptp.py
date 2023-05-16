@@ -10,7 +10,8 @@ from ..logic import (
     Term,
     Variable,
     substitute,
-    superposition_results
+    superposition_results,
+    mgu,
 )
 
 
@@ -112,7 +113,7 @@ def from_tptp_proof_string(str: str):
                         sequents.index(toplevel.sequent),
                         sequents.index(terminstance.sequent),
                         toplevel,
-                        terminstance
+                        terminstance,
                     )
                     break
             else:
@@ -121,6 +122,11 @@ def from_tptp_proof_string(str: str):
                     transformed_axioms[derivation[0]],
                     transformed_axioms[derivation[1]]
                 )
+        elif len(derivation) == 1:
+            proof.derivation[i] = (
+                proof.derived_sequents[i],
+                transformed_axioms[derivation[0]],
+            )
     return proof
 
 
